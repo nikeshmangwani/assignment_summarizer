@@ -12,6 +12,70 @@ nltk.download('averaged_perceptron_tagger_eng')
 import json
 import os
 
+from llama_index.llms.bedrock import Bedrock
+from llama_index.core.llms import ChatMessage
+from llama_index.llms.bedrock import Bedrock
+
+
+def set_bedrock_model(model_key,aws_access_key_id,aws_secret_access_key,aws_session_token,region_name):
+    '''
+    Functionailty : Set the bedrock model Basically to connect llamaindex with AWS Bedrock Model which Contains Many Foundation models.
+    More information https://aws.amazon.com/bedrock/
+
+    Params : model_key,
+    aws_access_key_id,
+    aws_secret_access_key,
+    aws_session_token,
+    region_name
+
+    return LLM Model
+    '''
+    llm = Bedrock(model=model_key,aws_access_key_id=aws_access_key_id,aws_secret_access_key=aws_secret_access_key,aws_session_token=aws_session_token,region_name=region_name)
+    return llm
+
+
+def simulate_llm_summary_from_llm_model(llm,sentences_count,section_content):
+    '''
+    Functionailty: Call AWS LLM Model with chat models and setting System prompt making LLM Model aware the role to be Summary writer with given Content and exactly with sentence count legth.
+    user role will be given the content and LLM will generate Summary.
+
+    Params : 
+
+    llm: LLM Model Object 
+    sentences_count: Number of Sentences to be generated 
+    
+    section_content: Given Section content which needs to be summarized
+
+    return: summary 
+
+    '''
+    messages = [ChatMessage(role="system", content=f"You are an Excellent Summary Writer and your role is to write summary for the given content by user and summary should be of length  {sentences_count} summary. Dont add any pretext just the summary with key business requirements"),
+    ChatMessage(role="user", content=section_content),]
+    resp = llm.chat(messages)
+    return resp.content
+
+def get_bedrock_llm_summary(llm,sentences_count,section_content_list):
+
+    '''
+    Functionailty : Basically will iterate all the sections and call simulate_llm_summary_from_llm_model function to get summary for that section.
+    Params : 
+
+    llm: LLM Model Object 
+    sentences_count: Number of Sentences to be generated 
+    
+    section_content: Given Section content which needs to be summarized
+
+    return: section_summaries 
+    '''
+    section_summaries = []
+    for sec_object in section_content_list:
+        paragraph = sec_object["section_content_paragragh"]
+        summary = simulate_llm_summary_from_llm_model(llm,sentences_count,paragraph)
+        section_title = sec_object["section_title"]
+        section_summaries.append({"section_number":section_title,"original_text":paragraph,"section_summary":summary})
+    return section_summaries
+
+
 
 def check_file_exits(text_file_path):
     '''
@@ -196,7 +260,7 @@ def write_to_json_file(section_summaries):
          
 
 
-def run_summary_pipeline(text_file_path="regulations.txt",sentences_count=2):
+def run_summary_pipeline(text_file_path="regulations.txt",sentences_count=2,use_llm=False,model_key="",aws_access_key_id="",aws_secret_access_key="",aws_session_token="",region_name=""):
     '''
     Main Function Entry point 
     Job of this function is to call all other functions in a flow 
@@ -204,10 +268,11 @@ def run_summary_pipeline(text_file_path="regulations.txt",sentences_count=2):
     2. if it contains normal flow starts else just return file is empty or not available 
     3. If valid file and has data , first it will convert into Markdown format as we can leverage Langchain which internally uses NLTK for parsing 
     4. Using Langchain we can parse contents into Section By Section and its respective content
-    5. Then once we get section and its content we use Sumy to summarize the content using LSA technique 
-    6. The LSA summarizer is the best one amognst all because it works by identifying patterns and relationships between texts, rather than soley rely on frequency analysis. This LSA summarizer generates more contextually accurate summaries by understanding the meaning and context of the input text.
-    7. Store back all summaries into list of dictionaries with keys section_number,original_text,section_summary
-    8. store them into json file
+    5. If use_llm == True then we are going to USE AWS bedrock LLM Model to generate summary else Sumy Summarizer
+    6. Then once we get section and its content we use Sumy to summarize the content using LSA technique 
+    7. The LSA summarizer is the best one amognst all because it works by identifying patterns and relationships between texts, rather than soley rely on frequency analysis. This LSA summarizer generates more contextually accurate summaries by understanding the meaning and context of the input text.
+    8. Store back all summaries into list of dictionaries with keys section_number,original_text,section_summary
+    9. store them into json file
 
     Params:
     text_file_path : which contains text contents inside the file 
@@ -223,7 +288,15 @@ def run_summary_pipeline(text_file_path="regulations.txt",sentences_count=2):
         data = get_sections_paragraphs_using_langchain_md_parser(markdown_path)
         if data:
             section_content_list = align_paragraph_with_particular_section(data)
-            section_summaries = get_summary_for_all_section_text(section_content_list,sentences_count)
+            if use_llm:
+                llm = set_bedrock_model(model_key,aws_access_key_id,aws_secret_access_key,aws_session_token,region_name)
+                section_summaries = get_bedrock_llm_summary(llm,sentences_count,section_content_list)
+
+                
+
+            else:
+                section_summaries = get_summary_for_all_section_text(section_content_list,sentences_count)
+            
             write_to_json_file(section_summaries)
             print("all_Jobs Done")
         else:
