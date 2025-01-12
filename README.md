@@ -65,4 +65,4 @@ json
 
 # Architecture Diagram with Full code Flow along with use of LLM AWS Bedrock Model and Sumy Package
 
-![Code Flow](images/LLM_summarizer)
+![Code Flow](images/LLM_summarizer.png)
